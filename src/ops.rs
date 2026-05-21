@@ -100,7 +100,16 @@ pub fn commit_paste(app: &mut App, mode: OpMode, dest_override: Option<PathBuf>)
                     fs::copy(src, &dest).map(|_| ()).map_err(Into::into)
                 }
             }
-            OpMode::Cut => fs::rename(src, &dest).map_err(Into::into),
+            OpMode::Cut => {
+                let r = fs::rename(src, &dest).map_err(Into::<anyhow::Error>::into);
+                if r.is_ok() {
+                    app.undo_stack.push(crate::undo::UndoOp::Move {
+                        src: src.clone(),
+                        dst: dest.clone(),
+                    });
+                }
+                r
+            }
             OpMode::Link => {
                 #[cfg(unix)]
                 {

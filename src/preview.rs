@@ -34,6 +34,7 @@ pub enum Preview {
     Directory(Vec<String>, usize),
     Image { width: u32, height: u32, size: u64 },
     Binary { size: u64 },
+    Archive { entries: Vec<String>, total: usize, size: u64, kind: &'static str },
     Empty,
     Error(String),
 }
@@ -73,6 +74,23 @@ pub fn get_preview(path: &Path) -> Preview {
         }
     }
 
+    // Archive preview
+    if let Some(ref e) = ext {
+        match e.as_str() {
+            "zip" => {
+                if let Some(p) = zip_preview(path, metadata.len()) {
+                    return p;
+                }
+            }
+            "tar" | "gz" | "tgz" | "bz2" | "tbz2" | "xz" => {
+                if let Some(p) = tar_preview(path, metadata.len(), e) {
+                    return p;
+                }
+            }
+            _ => {}
+        }
+    }
+
     // Try text preview (with syntax highlighting if possible)
     match text_preview(path) {
         Ok(lines) => Preview::Text(lines),
@@ -80,6 +98,63 @@ pub fn get_preview(path: &Path) -> Preview {
             size: metadata.len(),
         },
     }
+}
+
+fn zip_preview(path: &Path, size: u64) -> Option<Preview> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut zip = zip::ZipArchive::new(file).ok()?;
+    let total = zip.len();
+    let mut entries = Vec::with_capacity(total.min(MAX_LINES));
+    for i in 0..total.min(MAX_LINES) {
+        if let Ok(z) = zip.by_index(i) {
+            let prefix = if z.is_dir() { "" } else { "" };
+            entries.push(format!("{}  {}", prefix, z.name()));
+        }
+    }
+    Some(Preview::Archive {
+        entries,
+        total,
+        size,
+        kind: "zip",
+    })
+}
+
+fn tar_preview(path: &Path, size: u64, ext: &str) -> Option<Preview> {
+    let file = std::fs::File::open(path).ok()?;
+    let (entries, total, kind) = match ext {
+        "gz" | "tgz" => {
+            let mut ar = tar::Archive::new(flate2::read::GzDecoder::new(file));
+            let (e, t) = collect_tar_paths(&mut ar);
+            (e, t, "tar.gz")
+        }
+        _ => {
+            let mut ar = tar::Archive::new(file);
+            let (e, t) = collect_tar_paths(&mut ar);
+            (e, t, "tar")
+        }
+    };
+    Some(Preview::Archive { entries, total, size, kind })
+}
+
+fn collect_tar_paths<R: std::io::Read>(ar: &mut tar::Archive<R>) -> (Vec<String>, usize) {
+    let mut out = Vec::with_capacity(MAX_LINES);
+    let mut total = 0;
+    let Ok(iter) = ar.entries() else {
+        return (out, total);
+    };
+    for e in iter {
+        total += 1;
+        if out.len() < MAX_LINES {
+            if let Ok(ent) = e {
+                let is_dir = ent.header().entry_type().is_dir();
+                if let Ok(p) = ent.path() {
+                    let prefix = if is_dir { "" } else { "" };
+                    out.push(format!("{}  {}", prefix, p.display()));
+                }
+            }
+        }
+    }
+    (out, total)
 }
 
 fn dir_preview(path: &Path) -> Preview {

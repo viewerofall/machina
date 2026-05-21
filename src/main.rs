@@ -1,9 +1,14 @@
 mod app;
 mod archive;
+mod bulk_rename;
 mod clipboard;
 mod config;
 mod cwd_writer;
+mod dir_size;
+mod du_view;
 mod git;
+mod icon_sprites;
+mod icons;
 mod input;
 mod kgp;
 mod opener;
@@ -12,7 +17,9 @@ mod preview;
 mod shell;
 mod theme;
 mod tmux;
+mod trash_view;
 mod ui;
+mod undo;
 mod watcher;
 
 use anyhow::Result;
@@ -21,7 +28,7 @@ use config::Config;
 use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, KeyCode, KeyEvent, KeyEventKind,
-        KeyModifiers,
+        KeyModifiers, MouseEvent, MouseEventKind,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -37,12 +44,26 @@ use watcher::FsWatcher;
 async fn main() -> Result<()> {
     let _ = Config::ensure_default();
     let config = Config::load();
+    theme::set(config.theme.clone());
+
+    // Resolve icon mode. "image" requires kitty; degrade to nerd otherwise.
+    let mut icon_mode = config.icons;
+    if matches!(icon_mode, icons::IconMode::Image) && !kgp::is_kitty() {
+        icon_mode = icons::IconMode::Nerd;
+    }
+    icons::set_mode(icon_mode);
+
     let start = std::env::args().nth(1).map(PathBuf::from);
     let mut app = App::new(start, config)?;
 
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     enable_raw_mode()?;
+
+    // Pump sprite payloads into the terminal once we own the alt-screen.
+    if matches!(icon_mode, icons::IconMode::Image) {
+        let _ = icon_sprites::transmit_all(&mut stdout);
+    }
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
@@ -84,12 +105,11 @@ async fn main() -> Result<()> {
 
         // Poll input
         if crossterm::event::poll(Duration::from_millis(100))? {
-            if let event::Event::Key(key) = event::read()? {
-                if key.kind != KeyEventKind::Release {
+            match event::read()? {
+                event::Event::Key(key) if key.kind != KeyEventKind::Release => {
                     if !handle_key(&mut app, key, &mut terminal)? {
                         break;
                     }
-                    // Foreground shell command queued? Run it now (we have &mut terminal).
                     if let Some(cmd) = app.pending_fg_shell.take() {
                         let cwd = app.current().path.clone();
                         suspend_and_run(&mut terminal, || shell::run(&cmd, &cwd))?;
@@ -97,6 +117,10 @@ async fn main() -> Result<()> {
                     }
                     refresh_watcher(&mut fs_watcher, &app);
                 }
+                event::Event::Mouse(m) => {
+                    handle_mouse(&mut app, m);
+                }
+                _ => {}
             }
         }
 
@@ -148,6 +172,33 @@ fn refresh_watcher(w: &mut Option<FsWatcher>, app: &App) {
     }
 }
 
+fn handle_mouse(app: &mut App, m: MouseEvent) {
+    if !matches!(m.kind, MouseEventKind::Down(_)) {
+        return;
+    }
+    // Header row is always row 0 (tab strip would be row 1 if present)
+    if m.row == 0 && m.column >= 10 {
+        let path = app.current().path.display().to_string();
+        let click_col = (m.column as usize).saturating_sub(10);
+        if click_col >= path.len() {
+            return;
+        }
+        let cut = path[click_col..]
+            .find('/')
+            .map(|p| click_col + p)
+            .unwrap_or(path.len());
+        let target = if cut == 0 {
+            PathBuf::from("/")
+        } else {
+            PathBuf::from(&path[..cut])
+        };
+        if target.exists() && target != app.current().path {
+            let _ = app.current_mut().load_path(&target);
+            app.message(format!("→ {}", target.display()));
+        }
+    }
+}
+
 fn is_image_path(path: &std::path::Path) -> bool {
     path.extension()
     .and_then(|e| e.to_str())
@@ -163,6 +214,12 @@ fn handle_key(app: &mut App, key: KeyEvent, term: &mut Term) -> Result<bool> {
     if app.help == HelpVisible::Shown {
         return handle_help(app, key);
     }
+    if app.trash_view.is_some() {
+        return handle_trash_view(app, key, term);
+    }
+    if app.du_view.is_some() {
+        return handle_du_view(app, key);
+    }
     if app.paste_dialog.is_some() {
         return handle_paste_dialog(app, key);
     }
@@ -176,6 +233,67 @@ fn handle_key(app: &mut App, key: KeyEvent, term: &mut Term) -> Result<bool> {
         Mode::Normal => handle_normal(app, key, term),
         Mode::Visual => handle_visual(app, key, term),
     }
+}
+
+fn handle_du_view(app: &mut App, key: KeyEvent) -> Result<bool> {
+    let Some(dv) = app.du_view.as_mut() else { return Ok(true) };
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') => app.du_view = None,
+        KeyCode::Char('j') | KeyCode::Down => dv.cursor_down(40),
+        KeyCode::Char('k') | KeyCode::Up => dv.cursor_up(),
+        KeyCode::Char('g') => dv.cursor_top(),
+        KeyCode::Char('G') => dv.cursor_bottom(),
+        KeyCode::Enter | KeyCode::Char('l') => {
+            // Navigate into the hovered entry (if dir) or jump cursor to file in current view
+            if let Some(e) = dv.hovered().cloned() {
+                if e.is_dir {
+                    let p = e.path.clone();
+                    app.du_view = None;
+                    let _ = app.current_mut().load_path(&p);
+                } else {
+                    let name = e.name.clone();
+                    app.du_view = None;
+                    if let Some(idx) = app.current().files.iter().position(|f| f.name == name) {
+                        app.current_mut().cursor = idx;
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(true)
+}
+
+fn handle_trash_view(app: &mut App, key: KeyEvent, _term: &mut Term) -> Result<bool> {
+    let Some(tv) = app.trash_view.as_mut() else {
+        return Ok(true);
+    };
+    match (key.code, key.modifiers) {
+        (KeyCode::Esc, _) | (KeyCode::Char('q'), _) | (KeyCode::Char('T'), _) => {
+            app.trash_view = None;
+        }
+        (KeyCode::Char('j'), _) | (KeyCode::Down, _) => tv.cursor_down(40),
+        (KeyCode::Char('k'), _) | (KeyCode::Up, _) => tv.cursor_up(),
+        (KeyCode::Char('g'), _) => tv.cursor_top(),
+        (KeyCode::Char('G'), _) => tv.cursor_bottom(),
+        (KeyCode::Char('s'), _) => tv.toggle_select(),
+        (KeyCode::Char('p'), _) | (KeyCode::Enter, _) => match tv.restore_selected() {
+            Ok((ok, err)) => {
+                app.message(format!("restored {} ({} err)", ok, err));
+                let _ = app.current_mut().load();
+            }
+            Err(e) => app.message(format!("restore failed: {}", e)),
+        },
+        (KeyCode::Char('D'), _) => match tv.purge_selected() {
+            Ok((ok, err)) => app.message(format!("purged {} ({} err)", ok, err)),
+            Err(e) => app.message(format!("purge failed: {}", e)),
+        },
+        (KeyCode::Char('R'), _) => {
+            let _ = tv.refresh();
+        }
+        _ => {}
+    }
+    Ok(true)
 }
 
 fn handle_help(app: &mut App, key: KeyEvent) -> Result<bool> {
@@ -285,7 +403,12 @@ fn commit_input(app: &mut App, action: InputAction, value: String) -> Result<()>
             .map(|f| f.name.clone())
             .unwrap_or_default();
             match app.current_mut().rename_selected(&value) {
-                Ok(()) => app.message(format!("renamed: {} → {}", old, value)),
+                Ok(Some((src, dst))) => {
+                    app.undo_stack
+                        .push(crate::undo::UndoOp::Move { src, dst });
+                    app.message(format!("renamed: {} → {}", old, value));
+                }
+                Ok(None) => {}
                 Err(e) => app.message(format!("rename failed: {}", e)),
             }
         }
@@ -370,6 +493,31 @@ fn commit_input(app: &mut App, action: InputAction, value: String) -> Result<()>
                 app.message(format!("running: {}", expanded));
                 app.pending_fg_shell = Some(expanded_cmd);
             }
+        }
+        InputAction::Chmod => {
+            let mode = value.trim().to_string();
+            if mode.is_empty() {
+                app.message("chmod cancelled".into());
+                return Ok(());
+            }
+            let targets = app.targets();
+            if targets.is_empty() {
+                app.message("nothing to chmod".into());
+                return Ok(());
+            }
+            let mut args: Vec<String> = vec![mode.clone()];
+            for t in &targets {
+                args.push(t.display().to_string());
+            }
+            let res = std::process::Command::new("chmod").args(&args).status();
+            match res {
+                Ok(s) if s.success() => {
+                    app.message(format!("chmod {} → {} item(s)", mode, targets.len()))
+                }
+                Ok(s) => app.message(format!("chmod exit {}", s.code().unwrap_or(-1))),
+                Err(e) => app.message(format!("chmod failed: {}", e)),
+            }
+            let _ = app.current_mut().load();
         }
         InputAction::Teleport => {
             let path_str = value.trim();
@@ -471,6 +619,112 @@ fn handle_normal(app: &mut App, key: KeyEvent, term: &mut Term) -> Result<bool> 
                 app.keybind.clear_pending();
                 return Ok(true);
             }
+            // du = disk usage view for current dir
+            ('d', KeyCode::Char('u')) => {
+                let cwd = app.current().path.clone();
+                app.message("computing disk usage…".into());
+                let view = du_view::DuView::compute(&cwd);
+                app.du_view = Some(view);
+                app.keybind.clear_pending();
+                return Ok(true);
+            }
+            // gf = follow symlink to its target
+            ('g', KeyCode::Char('f')) => {
+                if let Some(entry) = app.current().hovered().cloned() {
+                    if let Some(target) = entry.symlink_target.clone() {
+                        let resolved = if target.is_absolute() {
+                            target
+                        } else {
+                            app.current().path.join(&target)
+                        };
+                        let dest = if resolved.is_dir() {
+                            resolved
+                        } else {
+                            resolved.parent().map(|p| p.to_path_buf()).unwrap_or(resolved)
+                        };
+                        match app.current_mut().load_path(&dest) {
+                            Ok(()) => app.message(format!("→ {}", dest.display())),
+                            Err(e) => app.message(format!("follow failed: {}", e)),
+                        }
+                    } else {
+                        app.message("not a symlink".into());
+                    }
+                }
+                app.keybind.clear_pending();
+                return Ok(true);
+            }
+            // o<x> = sort by x (toggle reverse if same)
+            ('o', KeyCode::Char(c)) => {
+                use crate::app::SortMode;
+                let mode = match c {
+                    'n' => Some(SortMode::Name),
+                    's' => Some(SortMode::Size),
+                    'm' => Some(SortMode::Modified),
+                    'e' => Some(SortMode::Extension),
+                    'r' => {
+                        // toggle reverse only
+                        let f = app.current_mut();
+                        f.sort_reverse = !f.sort_reverse;
+                        f.sort_files();
+                        f.apply_filter();
+                        let label = format!(
+                            "sort: {} {}",
+                            f.sort.label(),
+                            if f.sort_reverse { "↓" } else { "↑" }
+                        );
+                        app.message(label);
+                        app.keybind.clear_pending();
+                        return Ok(true);
+                    }
+                    _ => None,
+                };
+                if let Some(m) = mode {
+                    let f = app.current_mut();
+                    f.set_sort(m);
+                    let label = format!(
+                        "sort: {} {}",
+                        f.sort.label(),
+                        if f.sort_reverse { "↓" } else { "↑" }
+                    );
+                    app.message(label);
+                }
+                app.keybind.clear_pending();
+                return Ok(true);
+            }
+            // cs = calc size of hovered/selected dirs
+            ('c', KeyCode::Char('s')) => {
+                let targets = app.targets();
+                let mut total: u64 = 0;
+                let mut count = 0usize;
+                for p in &targets {
+                    let bytes = dir_size::compute_and_store(p);
+                    total += bytes;
+                    count += 1;
+                }
+                // Update file entries in current folder so size column reflects
+                let _ = app.current_mut().load();
+                app.message(format!(
+                    "sized {} item(s): {}",
+                    count,
+                    preview::format_size(total)
+                ));
+                app.keybind.clear_pending();
+                return Ok(true);
+            }
+            // m<char> = set bookmark to current dir
+            ('m', KeyCode::Char(c)) if c.is_ascii_alphanumeric() => {
+                let key = c.to_string();
+                let cur = app.current().path.clone();
+                match config::Config::save_bookmark(&key, &cur) {
+                    Ok(()) => {
+                        app.config.bookmarks.insert(key.clone(), cur.clone());
+                        app.message(format!("bookmark {} → {}", key, cur.display()));
+                    }
+                    Err(e) => app.message(format!("bookmark save failed: {}", e)),
+                }
+                app.keybind.clear_pending();
+                return Ok(true);
+            }
             // g<key> bookmark
             ('g', KeyCode::Char(c)) => {
                 let key_str = c.to_string();
@@ -528,6 +782,9 @@ fn handle_normal(app: &mut App, key: KeyEvent, term: &mut Term) -> Result<bool> 
         (KeyCode::Char('g'), m) if m.is_empty() => app.keybind.set_pending('g'),
         (KeyCode::Char('y'), m) if m.is_empty() => app.keybind.set_pending('y'),
         (KeyCode::Char('d'), m) if m.is_empty() => app.keybind.set_pending('d'),
+        (KeyCode::Char('o'), m) if m.is_empty() => app.keybind.set_pending('o'),
+        (KeyCode::Char('c'), m) if m.is_empty() => app.keybind.set_pending('c'),
+        (KeyCode::Char('m'), m) if m.is_empty() => app.keybind.set_pending('m'),
 
         // Jump bottom
         (KeyCode::Char('G'), _) => app.current_mut().cursor_bottom(),
@@ -575,10 +832,80 @@ fn handle_normal(app: &mut App, key: KeyEvent, term: &mut Term) -> Result<bool> 
             .open(InputAction::JumpToChar, "jump to: ".into(), String::new());
         }
 
-        // Teleport (goto path)
-        (KeyCode::Char('T'), _) => {
+        // Teleport (goto path) — lowercase b
+        (KeyCode::Char('b'), _) => {
             app.input
             .open(InputAction::Teleport, "teleport: ".into(), String::new());
+        }
+
+        // Trash browser
+        (KeyCode::Char('T'), _) => match crate::trash_view::TrashView::open() {
+            Ok(tv) => {
+                app.trash_view = Some(tv);
+            }
+            Err(e) => app.message(format!("trash open failed: {}", e)),
+        },
+
+        // Bulk rename via $EDITOR
+        (KeyCode::Char('M'), _) => {
+            let targets = app.targets();
+            if targets.is_empty() {
+                app.message("nothing to rename".into());
+            } else {
+                let editor = app.config.editor.clone();
+                let n = targets.len();
+                let result = suspend_and_run(term, || {
+                    crate::bulk_rename::run(&editor, &targets).map(|(o, s)| {
+                        eprintln!("bulk: renamed {} / skipped {}", o, s);
+                        ()
+                    })
+                });
+                match result {
+                    Ok(()) => app.message(format!("bulk rename: {} item(s)", n)),
+                    Err(e) => app.message(format!("bulk rename failed: {}", e)),
+                }
+                app.clear_selected();
+                let _ = app.current_mut().load();
+            }
+        }
+
+        // Find files (fd | fzf)
+        (KeyCode::Char('F'), _) => {
+            let cwd = app.current().path.clone();
+            let tmp = std::env::temp_dir()
+                .join(format!("machina-find-{}.txt", std::process::id()));
+            let tmp_str = tmp.display().to_string();
+            let cmd = format!(
+                "cd {} && fd --hidden --no-ignore-vcs --type f --type d 2>/dev/null | fzf --reverse --height=100% > {}",
+                crate::shell::shell_quote(&cwd.display().to_string()),
+                crate::shell::shell_quote(&tmp_str)
+            );
+            let shell_cmd = crate::shell::ShellCmd {
+                raw: cmd,
+                background: false,
+            };
+            let _ = suspend_and_run(term, || crate::shell::run(&shell_cmd, &cwd));
+            if let Ok(picked) = std::fs::read_to_string(&tmp) {
+                let _ = std::fs::remove_file(&tmp);
+                let picked = picked.trim();
+                if !picked.is_empty() {
+                    let target = cwd.join(picked);
+                    if let Some(parent) = target.parent() {
+                        let parent = parent.to_path_buf();
+                        let _ = app.current_mut().load_path(&parent);
+                        if let Some(name) = target.file_name().and_then(|n| n.to_str()) {
+                            if let Some(idx) =
+                                app.current().files.iter().position(|f| f.name == name)
+                            {
+                                app.current_mut().cursor = idx;
+                            }
+                        }
+                        app.message(format!("→ {}", picked));
+                    }
+                }
+            } else {
+                let _ = std::fs::remove_file(&tmp);
+            }
         }
 
         // Archive (compress to .tar.gz)
@@ -697,6 +1024,28 @@ fn handle_normal(app: &mut App, key: KeyEvent, term: &mut Term) -> Result<bool> 
                 }
             } else {
                 suspend_and_run(term, || opener::open_shell(&cwd))?;
+            }
+        }
+
+        // Undo last op
+        (KeyCode::Char('u'), m) if m.is_empty() => match app.undo_stack.pop_and_apply() {
+            Ok(msg) => {
+                app.message(msg);
+                let _ = app.current_mut().load();
+            }
+            Err(e) => app.message(format!("undo: {}", e)),
+        },
+
+        // chmod
+        (KeyCode::Char('+'), _) => {
+            if app.targets().is_empty() {
+                app.message("nothing to chmod".into());
+            } else {
+                app.input.open(
+                    InputAction::Chmod,
+                    "chmod (e.g. 755 or u+x): ".into(),
+                    String::new(),
+                );
             }
         }
 

@@ -137,6 +137,9 @@ y() {  ...  }
 | `PgUp` / `Ctrl-u` | Page up                                                      |
 | `f`            | Quick jump: prompts for one character, jumps to next matching   |
 | `g <bookmark>` | Jump to bookmark defined in config (e.g. `g h` → home)          |
+| `m <c>`        | **Set bookmark** `<c>` to current dir (persists to config.toml) |
+| `b`            | Teleport — input bar for arbitrary path (with `~` expansion)    |
+| `F`            | Find files — runs `fd | fzf`, cd's to selection                 |
 | `.`            | Toggle hidden files                                             |
 | `R`            | Reload current directory                                        |
 
@@ -152,6 +155,7 @@ y() {  ...  }
 | `r`       | Rename — input bar with cursor at end                            |
 | `A`       | Rename — input bar with cursor *before extension* (yazi-style)   |
 | `a`       | Create new file or directory (see [Smart Create](#smart-create-syntax)) |
+| `M`       | **Bulk rename** — opens `$EDITOR` with one name per line         |
 
 #### Visual mode (range select)
 
@@ -230,6 +234,105 @@ exit.
 | --------- | ---------------------------------------------------------------- |
 | `z`       | Archive selected/hovered into `.tar.gz` (input bar + confirm)    |
 | `!`       | Run a shell command — supports template vars                     |
+
+### Sorting
+
+| Chord     | Action                                                          |
+| --------- | --------------------------------------------------------------- |
+| `o n`     | Sort by **name** (default)                                      |
+| `o s`     | Sort by **size** (biggest first)                                |
+| `o m`     | Sort by **mtime** (newest first)                                |
+| `o e`     | Sort by **extension** (then name)                               |
+| `o r`     | Reverse the **current** sort direction                          |
+
+Pressing the same sort key twice toggles its direction. Directories always
+sort first regardless of mode.
+
+### Folder Size (Cached)
+
+| Chord     | Action                                                          |
+| --------- | --------------------------------------------------------------- |
+| `c s`     | Compute size of hovered/selected dir(s) via `jwalk` (parallel)  |
+
+The result is cached at `~/.cache/machina/sizes.json`, keyed by `(path, mtime)`.
+Subsequent loads of the same dir instantly show the cached size in the size
+column — no `du` re-scan. When the dir's mtime changes, the cache is
+invalidated and recomputed on next `c s`.
+
+Cost: zero. Nothing runs unless you ask. Combine with `o s` to surface the
+biggest folders in a directory.
+
+### Undo
+
+| Key       | Action                                                          |
+| --------- | --------------------------------------------------------------- |
+| `u`       | Undo last rename or move (stack of 32, session-scoped)          |
+
+Only `Cut`-paste moves and `r`/`A`/`M` renames are undoable. Trashed files
+should be restored from `T` (trash browser). Copy and Link are non-destructive
+so they don't need undo.
+
+### Symlinks
+
+Symlinks are shown as `name → target` in the file list. They get the
+`symlink_fg` theme color (default amber).
+
+| Chord     | Action                                                          |
+| --------- | --------------------------------------------------------------- |
+| `g f`     | Follow symlink: jump to its target directory                    |
+
+### Permissions
+
+The full Unix mode (`-rwxr-xr-x`) of the **hovered** file is shown at the start
+of the bottom status bar, yazi-style.
+
+| Key       | Action                                                          |
+| --------- | --------------------------------------------------------------- |
+| `+`       | Open chmod input bar (e.g. `755`, `u+x`, `g-w`)                 |
+
+Applies to the selection set if any, else hovered. Uses the system `chmod`
+binary, so any mode syntax that supports works.
+
+### Disk Usage View
+
+| Chord     | Action                                                          |
+| --------- | --------------------------------------------------------------- |
+| `d u`     | Open ncdu-style bar chart of current directory                  |
+
+Inside the view:
+
+| Key                | Action                                  |
+| ------------------ | --------------------------------------- |
+| `j` / `k`          | Move cursor                             |
+| `g` / `G`          | Top / bottom                            |
+| `Enter` / `l`      | Open dir / jump cursor to file          |
+| `q` / `Esc`        | Close view                              |
+
+Entries are sorted by size desc, with horizontal bars showing relative size
+and `%` of folder total. Uses the same jwalk cache as `c s` — instant for
+folders you've already sized.
+
+### Mouse — Breadcrumbs
+
+Click any path segment in the **header bar** to jump to that path. The
+`machina` chip is fixed-width, so segments start at column 10. Mouse capture
+is always on (already used for resize events).
+
+### Trash Browser
+
+| Key in trash modal | Action                                  |
+| ------------------ | --------------------------------------- |
+| `j` / `k`          | Move cursor                             |
+| `g` / `G`          | Top / bottom                            |
+| `s`                | Toggle multi-select on current row      |
+| `Enter` / `p`      | **Restore** selected (or hovered)       |
+| `D`                | **Purge** selected (gone forever)       |
+| `R`                | Refresh listing                         |
+| `T` / `q` / `Esc`  | Close trash view                        |
+
+Opens with capital `T` from normal mode. Reads via the XDG trash spec, so it
+sees anything sent to trash by Dolphin, Nautilus, machina's `x`, etc. Shows
+deletion timestamp + original path.
 
 ### View & Help
 
@@ -321,11 +424,26 @@ For search, results update live as you type.
 
 ### Which-Key Popup
 
-When you press a *chord starter* (`g`, `y`, or `d`), a popup appears in the
-bottom-right showing what comes next. Bookmarks populate dynamically from
-config.
+When you press a *chord starter* (`g`, `y`, `d`, `o`, `c`, or `m`), a popup
+appears in the bottom-right showing what comes next. Bookmarks populate
+dynamically from config when you press `g`.
 
 Auto-dismisses after 1 second or on next key press.
+
+### Bulk Rename Modal (via `$EDITOR`)
+
+`M` writes one name per line to a temp file, opens it in your configured editor
+(usually `lvim`/`nvim`). On save & quit, machina diffs the lines against the
+originals and renames in order.
+
+Rules:
+- Line count must match exactly (1 line per file).
+- Comment lines starting with `#` are ignored.
+- A line that would contain `/` is skipped (no path moves — that's `p`'s job).
+- A target name that already exists is skipped silently.
+
+For a single file: this is a heavier rename than `r`. For 50 files: this is
+the killer feature you came for.
 
 ---
 
@@ -355,6 +473,38 @@ editor         = "/home/abyss/.local/bin/lvim"  # used by Space and Enter on tex
   for trash. `D` always asks regardless.
 - `editor` (string, default `$EDITOR` or `nvim`) — invoked by `Space`. Can be
   any binary on `$PATH` or an absolute path.
+- `respect_gitignore` (bool, default `true`) — when true, files matched by any
+  `.gitignore` are treated as **hidden** (toggle with `.` like dotfiles).
+- `icons` (string, default `"nerd"`) — icon rendering mode. One of:
+  - `"nerd"` — Nerd-Font PUA glyphs. Requires a Nerd Font in your terminal,
+    e.g. in kitty: `symbol_map U+E000-U+F8FF,U+F0000-U+FFFFF JetBrainsMono Nerd Font`
+  - `"image"` — kitty graphics protocol with baked-in PNG sprites
+    (`assets/icons/*.png`, generated by `tools/gen_icons.py`). Only works
+    inside kitty; automatically falls back to `"nerd"` elsewhere.
+  - `"ascii"` — plain text marker (`>` for dirs, `@` for symlinks). For
+    low-end / non-Unicode terminals.
+  - `"off"` — no icon column at all.
+
+### `[theme]`
+
+```toml
+[theme]
+bg              = "#0a0010"
+fg              = "#c792ea"
+accent          = "#00e5c8"
+dim             = "#6c7086"
+visual_bg       = "#1c1032"
+dir_fg          = "#00e5c8"
+file_fg         = "#c792ea"
+error_fg        = "#ff5555"
+warn_fg         = "#ffb86c"
+git_ignored_fg  = "#464a60"
+symlink_fg      = "#ffd170"
+```
+
+All keys are optional — omitted ones use the OneShot defaults. Use any
+6-digit hex (`#RRGGBB`). Reload by restarting machina; live reload is not yet
+supported.
 
 ### `[bookmarks]`
 

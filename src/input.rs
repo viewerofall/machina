@@ -7,6 +7,7 @@ pub enum InputAction {
     Archive,     // create .tar.gz
     Shell,       // run shell command ($f, $@, $d, trailing & = bg)
     Teleport,    // cd to path
+    Chmod,       // chmod hovered/selected (octal or symbolic)
 }
 
 pub struct Input {

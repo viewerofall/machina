@@ -10,6 +10,9 @@ pub struct Config {
     pub editor: String,
     pub bookmarks: HashMap<String, PathBuf>,
     pub openers: HashMap<String, String>,
+    pub theme: crate::theme::Theme,
+    pub respect_gitignore: bool,
+    pub icons: crate::icons::IconMode,
 }
 
 #[derive(Deserialize, Default)]
@@ -20,6 +23,8 @@ struct RawConfig {
     bookmarks: HashMap<String, String>,
     #[serde(default)]
     openers: HashMap<String, String>,
+    #[serde(default)]
+    theme: RawTheme,
 }
 
 #[derive(Deserialize, Default)]
@@ -30,6 +35,29 @@ struct RawGeneral {
     confirm_delete: bool,
     #[serde(default = "default_editor")]
     editor: String,
+    #[serde(default = "default_true")]
+    respect_gitignore: bool,
+    #[serde(default = "default_icons")]
+    icons: String,
+}
+
+fn default_icons() -> String {
+    "nerd".to_string()
+}
+
+#[derive(Deserialize, Default)]
+struct RawTheme {
+    bg: Option<String>,
+    fg: Option<String>,
+    accent: Option<String>,
+    dim: Option<String>,
+    visual_bg: Option<String>,
+    dir_fg: Option<String>,
+    file_fg: Option<String>,
+    error_fg: Option<String>,
+    warn_fg: Option<String>,
+    git_ignored_fg: Option<String>,
+    symlink_fg: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -77,6 +105,9 @@ impl Default for Config {
             editor,
             bookmarks,
             openers,
+            theme: crate::theme::Theme::default(),
+            respect_gitignore: true,
+            icons: crate::icons::IconMode::Nerd,
         }
     }
 }
@@ -103,6 +134,57 @@ impl Config {
             .join("config.toml")
     }
 
+    /// Persist a single bookmark key into the user config file. Lossy: rewrites just the
+    /// [bookmarks] table by appending/replacing the key. Keeps everything else intact.
+    pub fn save_bookmark(key: &str, path: &std::path::Path) -> Result<()> {
+        let cfg_path = Self::config_path();
+        if let Some(parent) = cfg_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut existing = std::fs::read_to_string(&cfg_path).unwrap_or_else(|_| String::new());
+        let line = format!("{} = \"{}\"", key, path.display());
+
+        // If [bookmarks] section exists, look for key=
+        let needle_section = "[bookmarks]";
+        if let Some(sec_pos) = existing.find(needle_section) {
+            // Find boundaries of section
+            let after = &existing[sec_pos + needle_section.len()..];
+            let next_section = after.find("\n[").map(|p| sec_pos + needle_section.len() + p);
+            let section_end = next_section.unwrap_or(existing.len());
+            let section_body = &existing[sec_pos + needle_section.len()..section_end];
+
+            let key_prefix = format!("\n{} =", key);
+            let key_prefix_alt = format!("\n{} = ", key);
+            if section_body.contains(&key_prefix) || section_body.contains(&key_prefix_alt) {
+                // Replace the line
+                let mut out = String::new();
+                for l in existing.lines() {
+                    let trimmed = l.trim_start();
+                    if trimmed.starts_with(&format!("{} =", key)) || trimmed.starts_with(&format!("{}=", key)) {
+                        out.push_str(&line);
+                        out.push('\n');
+                    } else {
+                        out.push_str(l);
+                        out.push('\n');
+                    }
+                }
+                existing = out;
+            } else {
+                // Insert after [bookmarks]
+                let insertion = sec_pos + needle_section.len();
+                existing.insert_str(insertion, &format!("\n{}", line));
+            }
+        } else {
+            if !existing.ends_with('\n') && !existing.is_empty() {
+                existing.push('\n');
+            }
+            existing.push_str(&format!("\n[bookmarks]\n{}\n", line));
+        }
+
+        std::fs::write(&cfg_path, existing)?;
+        Ok(())
+    }
+
     pub fn ensure_default() -> Result<()> {
         let path = Self::config_path();
         if path.exists() {
@@ -122,6 +204,8 @@ impl RawConfig {
         cfg.show_hidden = self.general.show_hidden;
         cfg.confirm_delete = self.general.confirm_delete;
         cfg.editor = self.general.editor;
+        cfg.respect_gitignore = self.general.respect_gitignore;
+        cfg.icons = crate::icons::parse_mode(&self.general.icons);
 
         for (k, v) in self.bookmarks {
             cfg.bookmarks.insert(k, expand_tilde(&v));
@@ -129,6 +213,21 @@ impl RawConfig {
         for (k, v) in self.openers {
             cfg.openers.insert(k.to_lowercase(), v);
         }
+
+        // Theme overrides
+        let t = &mut cfg.theme;
+        if let Some(c) = self.theme.bg.and_then(|s| crate::theme::parse_hex(&s)) { t.bg = c; }
+        if let Some(c) = self.theme.fg.and_then(|s| crate::theme::parse_hex(&s)) { t.fg = c; t.file_fg = c; }
+        if let Some(c) = self.theme.accent.and_then(|s| crate::theme::parse_hex(&s)) { t.accent = c; t.dir_fg = c; t.ok_fg = c; }
+        if let Some(c) = self.theme.dim.and_then(|s| crate::theme::parse_hex(&s)) { t.dim = c; }
+        if let Some(c) = self.theme.visual_bg.and_then(|s| crate::theme::parse_hex(&s)) { t.visual_bg = c; }
+        if let Some(c) = self.theme.dir_fg.and_then(|s| crate::theme::parse_hex(&s)) { t.dir_fg = c; }
+        if let Some(c) = self.theme.file_fg.and_then(|s| crate::theme::parse_hex(&s)) { t.file_fg = c; }
+        if let Some(c) = self.theme.error_fg.and_then(|s| crate::theme::parse_hex(&s)) { t.error_fg = c; }
+        if let Some(c) = self.theme.warn_fg.and_then(|s| crate::theme::parse_hex(&s)) { t.warn_fg = c; }
+        if let Some(c) = self.theme.git_ignored_fg.and_then(|s| crate::theme::parse_hex(&s)) { t.git_ignored_fg = c; }
+        if let Some(c) = self.theme.symlink_fg.and_then(|s| crate::theme::parse_hex(&s)) { t.symlink_fg = c; }
+
         cfg
     }
 }
@@ -148,6 +247,24 @@ const DEFAULT_CONFIG_TOML: &str = r##"# machina config (~/.config/machina/config
 show_hidden = false
 confirm_delete = true
 editor = "nvim"
+respect_gitignore = true     # treat .gitignore matches as hidden (toggle with `.`)
+# Icon mode: "nerd" (Nerd-Font glyph), "image" (kitty graphics PNGs),
+#           "ascii" (plain text marker), "off" (no icon column).
+icons = "nerd"
+
+# Theme — hex colors. All optional; omitted keys fall back to OneShot defaults.
+[theme]
+# bg            = "#0a0010"
+# fg            = "#c792ea"
+# accent        = "#00e5c8"
+# dim           = "#6c7086"
+# visual_bg     = "#1c1032"
+# dir_fg        = "#00e5c8"
+# file_fg       = "#c792ea"
+# error_fg      = "#ff5555"
+# warn_fg       = "#ffb86c"
+# git_ignored_fg= "#464a60"
+# symlink_fg    = "#ffd170"
 
 # Goto bookmarks: press `g <key>` to jump
 [bookmarks]

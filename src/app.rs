@@ -7,7 +7,7 @@ use anyhow::Result;
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
 
-pub use folder::Folder;
+pub use folder::{Folder, SortMode};
 pub use keybind::{KeybindState, Mode};
 
 #[derive(Debug, Clone)]
@@ -65,6 +65,9 @@ pub struct App {
     pub help: HelpVisible,
     pub config: Config,
     pub pending_fg_shell: Option<crate::shell::ShellCmd>,
+    pub trash_view: Option<crate::trash_view::TrashView>,
+    pub du_view: Option<crate::du_view::DuView>,
+    pub undo_stack: crate::undo::UndoStack,
 }
 
 impl App {
@@ -74,6 +77,9 @@ impl App {
 
         let mut folder = Folder::new(path)?;
         folder.show_hidden = config.show_hidden;
+        folder.respect_gitignore = config.respect_gitignore;
+        // Re-load now that the ignore flag is set, so files get tagged correctly.
+        let _ = folder.load();
         folder.apply_filter();
 
         Ok(Self {
@@ -91,6 +97,9 @@ impl App {
             help: HelpVisible::Hidden,
             config,
             pending_fg_shell: None,
+            trash_view: None,
+            du_view: None,
+            undo_stack: Default::default(),
         })
     }
 
@@ -112,6 +121,8 @@ impl App {
     pub fn new_tab(&mut self, path: PathBuf) -> Result<()> {
         let mut f = Folder::new(path)?;
         f.show_hidden = self.config.show_hidden;
+        f.respect_gitignore = self.config.respect_gitignore;
+        let _ = f.load();
         f.apply_filter();
         self.tabs.push(f);
         self.active = self.tabs.len() - 1;

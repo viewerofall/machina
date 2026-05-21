@@ -85,7 +85,7 @@ pub fn expand(input: &str, hovered: Option<&Path>, selected: &[PathBuf], cwd: &P
 }
 
 /// Minimal single-quoted shell escape.
-fn shell_quote(s: &str) -> String {
+pub fn shell_quote(s: &str) -> String {
     if !s.is_empty() && s.chars().all(|c| {
         c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/' | ':' | ',')
     }) {
