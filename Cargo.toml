@@ -1,0 +1,29 @@
+[package]
+name = "machina"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ratatui = "0.27"
+crossterm = { version = "0.28", features = ["serde"] }
+tokio = { version = "1", features = ["full"] }
+trash = "5"
+walkdir = "2.4"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+mime_guess = "2.0"
+dirs = "5.0"
+chrono = "0.4"
+anyhow = "1.0"
+thiserror = "1.0"
+unicode-width = "0.1"
+image = "0.25"
+syntect = "5"
+base64 = "0.22"
+notify = "7"
+arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
+
+[[bin]]
+name = "machina"
+path = "src/main.rs"

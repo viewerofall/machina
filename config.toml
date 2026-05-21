@@ -1,0 +1,15 @@
+# machina configuration
+
+[general]
+show_hidden = false
+confirm_delete = true
+sort_by = "name"  # name, size, date
+
+[theme]
+# Colors (hex or named: black, red, green, yellow, blue, magenta, cyan, white)
+background = "#0a0010"  # Your TWM aesthetic
+foreground = "#c792ea"
+accent = "#00e5c8"
+
+[keybinds]
+# Override defaults here (planned)
