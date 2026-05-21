@@ -6,7 +6,6 @@ use std::sync::OnceLock;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Style as SynStyle, Theme, ThemeSet};
 use syntect::parsing::SyntaxSet;
-use syntect::util::LinesWithEndings;
 
 const MAX_LINES: usize = 200;
 const MAX_BYTES_PER_LINE: usize = 1024;
@@ -23,10 +22,10 @@ fn theme() -> &'static Theme {
         let ts = ThemeSet::load_defaults();
         // Match OneShot aesthetic - dark purple bg
         ts.themes
-            .get("base16-mocha.dark")
-            .or_else(|| ts.themes.get("base16-ocean.dark"))
-            .cloned()
-            .unwrap_or_else(|| ts.themes.values().next().unwrap().clone())
+        .get("base16-mocha.dark")
+        .or_else(|| ts.themes.get("base16-ocean.dark"))
+        .cloned()
+        .unwrap_or_else(|| ts.themes.values().next().unwrap().clone())
     })
 }
 
@@ -54,15 +53,15 @@ pub fn get_preview(path: &Path) -> Preview {
     }
 
     let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(str::to_lowercase);
+    .extension()
+    .and_then(|e| e.to_str())
+    .map(str::to_lowercase);
 
     // Image preview (just metadata for TUI)
     if let Some(ref e) = ext {
         if matches!(
             e.as_str(),
-            "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "ico"
+                    "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "ico"
         ) {
             if let Ok(img) = image::open(path) {
                 return Preview::Image {
@@ -87,18 +86,18 @@ fn dir_preview(path: &Path) -> Preview {
     match std::fs::read_dir(path) {
         Ok(entries) => {
             let mut items: Vec<_> = entries
-                .filter_map(|e| e.ok())
-                .map(|e| {
-                    let p = e.path();
-                    let name = p
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("?")
-                        .to_string();
-                    let prefix = if p.is_dir() { "📁 " } else { "  " };
-                    format!("{}{}", prefix, name)
-                })
-                .collect();
+            .filter_map(|e| e.ok())
+            .map(|e| {
+                let p = e.path();
+                let name = p
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("?")
+                .to_string();
+                let prefix = if p.is_dir() { "📁 " } else { "  " };
+                format!("{}{}", prefix, name)
+            })
+            .collect();
             items.sort();
             let total = items.len();
             items.truncate(MAX_LINES);
@@ -116,10 +115,10 @@ fn text_preview(path: &Path) -> Result<Vec<Line<'static>>, std::io::Error> {
     let th = theme();
 
     let syntax = ss
-        .find_syntax_for_file(path)
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| ss.find_syntax_plain_text());
+    .find_syntax_for_file(path)
+    .ok()
+    .flatten()
+    .unwrap_or_else(|| ss.find_syntax_plain_text());
 
     let mut highlighter = HighlightLines::new(syntax, th);
     let mut lines: Vec<Line<'static>> = Vec::with_capacity(MAX_LINES);
@@ -144,19 +143,19 @@ fn text_preview(path: &Path) -> Result<Vec<Line<'static>>, std::io::Error> {
 
         let line_with_nl = format!("{}\n", line);
         let ranges = highlighter
-            .highlight_line(&line_with_nl, ss)
-            .unwrap_or_default();
+        .highlight_line(&line_with_nl, ss)
+        .unwrap_or_default();
 
         let spans: Vec<Span<'static>> = ranges
-            .into_iter()
-            .map(|(style, text)| {
-                let color = syn_to_color(style);
-                Span::styled(
-                    text.trim_end_matches('\n').to_string(),
-                    Style::default().fg(color),
-                )
-            })
-            .collect();
+        .into_iter()
+        .map(|(style, text)| {
+            let color = syn_to_color(style);
+            Span::styled(
+                text.trim_end_matches('\n').to_string(),
+                         Style::default().fg(color),
+            )
+        })
+        .collect();
 
         lines.push(Line::from(spans));
     }

@@ -25,9 +25,9 @@ pub fn draw(f: &mut Frame, app: &App) -> Option<Rect> {
     constraints.push(Constraint::Length(1)); // status
 
     let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(constraints)
-        .split(area);
+    .direction(Direction::Vertical)
+    .constraints(constraints)
+    .split(area);
 
     let mut i = 0usize;
     draw_header(f, app, chunks[i]);
@@ -70,9 +70,9 @@ fn draw_body(f: &mut Frame, app: &App, area: Rect) -> Option<Rect> {
     if split {
         // Two panes side-by-side. No preview while split.
         let parts = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(area);
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(area);
 
         let left_active = app.split == Some(app.tabs.len() - 1) || app.active != app.split.unwrap();
         // active is on its side; we draw "active" + split partner
@@ -88,9 +88,9 @@ fn draw_body(f: &mut Frame, app: &App, area: Rect) -> Option<Rect> {
         None
     } else if preview {
         let parts = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
-            .split(area);
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+        .split(area);
         draw_pane(f, app, app.current(), parts[0], true);
         draw_preview(f, app, parts[1])
     } else {
@@ -105,9 +105,9 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
         Span::styled(
             " machina ",
             Style::default()
-                .bg(theme::ACCENT)
-                .fg(theme::BG)
-                .add_modifier(Modifier::BOLD),
+            .bg(theme::ACCENT)
+            .fg(theme::BG)
+            .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" "),
         Span::styled(
@@ -121,25 +121,36 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     if !app.current().filter.is_empty() {
         spans.push(Span::styled(
             format!("  /{}", app.current().filter),
-            Style::default().fg(theme::ACCENT),
+                Style::default().fg(theme::ACCENT),
         ));
     }
     if !app.selected.is_empty() {
         spans.push(Span::styled(
             format!("  [{} selected]", app.selected.len()),
-            Style::default().fg(theme::WARN_FG),
+                Style::default().fg(theme::WARN_FG),
         ));
     }
 
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 
-    if let Some(git) = &app.current().git {
+    // Show git status: either current folder or hovered directory
+    let hovered_git = app.current().hovered().and_then(|e| {
+        if e.is_dir {
+            crate::git::GitStatus::detect(&e.path)
+        } else {
+            None
+        }
+    });
+
+    let git_to_show = hovered_git.as_ref().or(app.current().git.as_ref());
+
+    if let Some(git) = git_to_show {
         let git_spans = git_segment(git);
         let line = Line::from(git_spans.clone());
         let width: u16 = git_spans
-            .iter()
-            .map(|s| s.content.chars().count() as u16)
-            .sum();
+        .iter()
+        .map(|s| s.content.chars().count() as u16)
+        .sum();
         if width < area.width {
             let right = Rect {
                 x: area.x + area.width - width - 1,
@@ -158,14 +169,14 @@ fn draw_tab_strip(f: &mut Frame, app: &App, area: Rect) {
         let name = t.path.file_name().and_then(|n| n.to_str()).unwrap_or("/");
         let style = if i == app.active {
             Style::default()
-                .bg(theme::ACCENT)
-                .fg(theme::BG)
-                .add_modifier(Modifier::BOLD)
+            .bg(theme::ACCENT)
+            .fg(theme::BG)
+            .add_modifier(Modifier::BOLD)
         } else if Some(i) == app.split {
             Style::default()
-                .bg(theme::VISUAL_BG)
-                .fg(theme::FG)
-                .add_modifier(Modifier::BOLD)
+            .bg(theme::VISUAL_BG)
+            .fg(theme::FG)
+            .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(theme::DIM)
         };
@@ -217,81 +228,81 @@ fn draw_pane(f: &mut Frame, app: &App, folder: &Folder, area: Rect, active: bool
     };
 
     let items: Vec<ListItem> = folder
-        .visible_files(area.height)
-        .enumerate()
-        .map(|(disp, entry)| {
-            let actual = folder.offset + disp;
-            let icon = if entry.is_dir { "" } else { "" };
-            let is_sel = active && actual == cursor;
-            let is_vis = visual_range
-                .map(|(s, e)| actual >= s && actual <= e)
-                .unwrap_or(false);
-            let is_multi = app.selected.contains(&entry.path);
+    .visible_files(area.height)
+    .enumerate()
+    .map(|(disp, entry)| {
+        let actual = folder.offset + disp;
+        let icon = if entry.is_dir { "" } else { "" };
+        let is_sel = active && actual == cursor;
+        let is_vis = visual_range
+        .map(|(s, e)| actual >= s && actual <= e)
+        .unwrap_or(false);
+        let is_multi = app.selected.contains(&entry.path);
 
-            let size_str = if entry.is_dir {
-                String::new()
-            } else {
-                preview::format_size(entry.size)
-            };
+        let size_str = if entry.is_dir {
+            String::new()
+        } else {
+            preview::format_size(entry.size)
+        };
 
-            let name_color = if entry.is_dir {
-                theme::DIR_FG
-            } else {
-                theme::FILE_FG
-            };
+        let name_color = if entry.is_dir {
+            theme::DIR_FG
+        } else {
+            theme::FILE_FG
+        };
 
-            let base_style = if is_sel {
-                Style::default()
-                    .bg(theme::ACCENT)
-                    .fg(theme::BG)
-                    .add_modifier(Modifier::BOLD)
-            } else if is_multi {
-                Style::default()
-                    .bg(theme::VISUAL_BG)
-                    .fg(theme::WARN_FG)
-                    .add_modifier(Modifier::BOLD)
-            } else if is_vis {
-                Style::default().bg(theme::VISUAL_BG).fg(theme::FG)
-            } else {
-                Style::default().fg(name_color)
-            };
+        let base_style = if is_sel {
+            Style::default()
+            .bg(theme::ACCENT)
+            .fg(theme::BG)
+            .add_modifier(Modifier::BOLD)
+        } else if is_multi {
+            Style::default()
+            .bg(theme::VISUAL_BG)
+            .fg(theme::WARN_FG)
+            .add_modifier(Modifier::BOLD)
+        } else if is_vis {
+            Style::default().bg(theme::VISUAL_BG).fg(theme::FG)
+        } else {
+            Style::default().fg(name_color)
+        };
 
-            let marker = if is_multi { "*" } else { " " };
-            let name_width = area.width.saturating_sub(26) as usize;
-            let truncated = if entry.name.chars().count() > name_width {
-                let mut s: String =
-                    entry.name.chars().take(name_width.saturating_sub(1)).collect();
-                s.push('…');
-                s
-            } else {
-                entry.name.clone()
-            };
+        let marker = if is_multi { "*" } else { " " };
+        let name_width = area.width.saturating_sub(26) as usize;
+        let truncated = if entry.name.chars().count() > name_width {
+            let mut s: String =
+            entry.name.chars().take(name_width.saturating_sub(1)).collect();
+            s.push('…');
+            s
+        } else {
+            entry.name.clone()
+        };
 
-            Line::from(vec![
-                Span::styled(
-                    format!("{} {}  {:<width$}", marker, icon, truncated, width = name_width),
+        Line::from(vec![
+            Span::styled(
+                format!("{} {}  {:<width$}", marker, icon, truncated, width = name_width),
                     base_style,
-                ),
-                Span::styled(
-                    format!(" {:>9} ", size_str),
+            ),
+            Span::styled(
+                format!(" {:>9} ", size_str),
                     if is_sel {
                         base_style
                     } else {
                         Style::default().fg(theme::DIM)
                     },
-                ),
-                Span::styled(
-                    format!("{:>11}", entry.modified),
+            ),
+            Span::styled(
+                format!("{:>11}", entry.modified),
                     if is_sel {
                         base_style
                     } else {
                         Style::default().fg(theme::DIM)
                     },
-                ),
-            ])
-        })
-        .map(ListItem::new)
-        .collect();
+            ),
+        ])
+    })
+    .map(ListItem::new)
+    .collect();
 
     let title = if active {
         match app.keybind.mode {
@@ -302,10 +313,10 @@ fn draw_pane(f: &mut Frame, app: &App, folder: &Folder, area: Rect, active: bool
         }
     } else {
         let name = folder
-            .path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("/");
+        .path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("/");
         format!(" {}: {} files ", name, folder.files.len())
     };
 
@@ -315,26 +326,26 @@ fn draw_pane(f: &mut Frame, app: &App, folder: &Folder, area: Rect, active: bool
         theme::DIM
     };
     let block = Block::default()
-        .title(Span::styled(
-            title,
-            Style::default().fg(border_color).add_modifier(Modifier::BOLD),
-        ))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
+    .title(Span::styled(
+        title,
+        Style::default().fg(border_color).add_modifier(Modifier::BOLD),
+    ))
+    .borders(Borders::ALL)
+    .border_style(Style::default().fg(border_color));
 
     f.render_widget(List::new(items).block(block), area);
 }
 
 fn draw_preview(f: &mut Frame, app: &App, area: Rect) -> Option<Rect> {
     let block = Block::default()
-        .title(Span::styled(
-            " preview ",
-            Style::default()
-                .fg(theme::ACCENT)
-                .add_modifier(Modifier::BOLD),
-        ))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme::DIM));
+    .title(Span::styled(
+        " preview ",
+        Style::default()
+        .fg(theme::ACCENT)
+        .add_modifier(Modifier::BOLD),
+    ))
+    .borders(Borders::ALL)
+    .border_style(Style::default().fg(theme::DIM));
 
     let entry = match app.current().hovered() {
         Some(e) => e,
@@ -354,19 +365,19 @@ fn draw_preview(f: &mut Frame, app: &App, area: Rect) -> Option<Rect> {
         }
         Preview::Directory(items, total) => {
             let lines: Vec<Line> = items
-                .into_iter()
-                .map(|s| {
-                    let color = if s.starts_with("📁") {
-                        theme::DIR_FG
-                    } else {
-                        theme::FG
-                    };
-                    Line::from(Span::styled(s, Style::default().fg(color)))
-                })
-                .collect();
+            .into_iter()
+            .map(|s| {
+                let color = if s.starts_with("📁") {
+                    theme::DIR_FG
+                } else {
+                    theme::FG
+                };
+                Line::from(Span::styled(s, Style::default().fg(color)))
+            })
+            .collect();
             let mut all = vec![Line::from(Span::styled(
                 format!(" {} items total", total),
-                Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
+                    Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
             ))];
             all.push(Line::from(""));
             all.extend(lines);
@@ -377,7 +388,7 @@ fn draw_preview(f: &mut Frame, app: &App, area: Rect) -> Option<Rect> {
             let header = vec![
                 Line::from(Span::styled(
                     format!(" {}×{}   {}", width, height, preview::format_size(size)),
-                    Style::default().fg(theme::DIM),
+                        Style::default().fg(theme::DIM),
                 )),
                 Line::from(""),
             ];
@@ -399,13 +410,13 @@ fn draw_preview(f: &mut Frame, app: &App, area: Rect) -> Option<Rect> {
                 Line::from(Span::styled(
                     " BINARY",
                     Style::default()
-                        .fg(theme::WARN_FG)
-                        .add_modifier(Modifier::BOLD),
+                    .fg(theme::WARN_FG)
+                    .add_modifier(Modifier::BOLD),
                 )),
                 Line::from(""),
                 Line::from(Span::styled(
                     format!(" Size: {}", preview::format_size(size)),
-                    Style::default().fg(theme::FG),
+                        Style::default().fg(theme::FG),
                 )),
             ];
             f.render_widget(Paragraph::new(text).block(block), area);
@@ -415,10 +426,10 @@ fn draw_preview(f: &mut Frame, app: &App, area: Rect) -> Option<Rect> {
             f.render_widget(
                 Paragraph::new(Span::styled(
                     " (empty)",
-                    Style::default().fg(theme::DIM),
+                                            Style::default().fg(theme::DIM),
                 ))
                 .block(block),
-                area,
+                            area,
             );
             None
         }
@@ -426,10 +437,10 @@ fn draw_preview(f: &mut Frame, app: &App, area: Rect) -> Option<Rect> {
             f.render_widget(
                 Paragraph::new(Span::styled(
                     format!(" {}", e),
-                    Style::default().fg(theme::ERROR_FG),
+                        Style::default().fg(theme::ERROR_FG),
                 ))
                 .block(block),
-                area,
+                            area,
             );
             None
         }
@@ -443,14 +454,14 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     let line = Line::from(vec![
         Span::styled(
             app.input.prompt.clone(),
-            Style::default()
-                .fg(theme::BG)
-                .bg(theme::ACCENT)
-                .add_modifier(Modifier::BOLD),
+                     Style::default()
+                     .fg(theme::BG)
+                     .bg(theme::ACCENT)
+                     .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" "),
-        Span::styled(app.input.buffer.clone(), Style::default().fg(theme::FG)),
-        Span::styled("▏", Style::default().fg(theme::ACCENT)),
+                          Span::styled(app.input.buffer.clone(), Style::default().fg(theme::FG)),
+                          Span::styled("▏", Style::default().fg(theme::ACCENT)),
     ]);
     f.render_widget(Paragraph::new(line), area);
 }
@@ -461,7 +472,7 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
     if let Some(msg) = app.messages.back() {
         spans.push(Span::styled(
             format!(" {}", msg),
-            Style::default().fg(theme::DIM),
+                Style::default().fg(theme::DIM),
         ));
     }
 
@@ -474,7 +485,7 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
         spans.push(Span::raw("  "));
         spans.push(Span::styled(
             format!("[{} {}]", label, op.files.len()),
-            Style::default().fg(theme::ACCENT),
+                Style::default().fg(theme::ACCENT),
         ));
     }
 
@@ -482,7 +493,7 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
         spans.push(Span::raw("  "));
         spans.push(Span::styled(
             format!("({})", c),
-            Style::default().fg(theme::WARN_FG),
+                Style::default().fg(theme::WARN_FG),
         ));
     }
 
@@ -516,10 +527,10 @@ fn draw_confirm(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let block = Block::default()
-        .title(Span::styled(title, Style::default().fg(color).add_modifier(Modifier::BOLD)))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(color))
-        .style(Style::default().bg(theme::BG));
+    .title(Span::styled(title, Style::default().fg(color).add_modifier(Modifier::BOLD)))
+    .borders(Borders::ALL)
+    .border_style(Style::default().fg(color))
+    .style(Style::default().bg(theme::BG));
 
     let body = vec![
         Line::from(""),
@@ -540,22 +551,22 @@ fn draw_paste_dialog(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Clear, popup);
 
     let block = Block::default()
-        .title(Span::styled(
-            " paste ",
-            Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
-        ))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme::ACCENT))
-        .style(Style::default().bg(theme::BG));
+    .title(Span::styled(
+        " paste ",
+        Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
+    ))
+    .borders(Borders::ALL)
+    .border_style(Style::default().fg(theme::ACCENT))
+    .style(Style::default().bg(theme::BG));
 
     let opts = ["Copy", "Move", "Link"];
     let mut row: Vec<Span> = Vec::new();
     for (i, name) in opts.iter().enumerate() {
         let style = if i == d.selected {
             Style::default()
-                .bg(theme::ACCENT)
-                .fg(theme::BG)
-                .add_modifier(Modifier::BOLD)
+            .bg(theme::ACCENT)
+            .fg(theme::BG)
+            .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(theme::FG)
         };
@@ -564,15 +575,15 @@ fn draw_paste_dialog(f: &mut Frame, app: &App, area: Rect) {
     }
 
     let n_files = app
-        .file_op
-        .as_ref()
-        .map(|o| o.files.len())
-        .unwrap_or(0);
+    .file_op
+    .as_ref()
+    .map(|o| o.files.len())
+    .unwrap_or(0);
     let dest = d
-        .dest_override
-        .as_ref()
-        .cloned()
-        .unwrap_or_else(|| app.current().path.clone());
+    .dest_override
+    .as_ref()
+    .cloned()
+    .unwrap_or_else(|| app.current().path.clone());
     let info = format!(" {} item(s) → {}", n_files, dest.display());
 
     let body = vec![
@@ -625,10 +636,10 @@ fn draw_which_key(f: &mut Frame, app: &App, area: Rect, chord: char) {
 
     let max_key = hints.iter().map(|(k, _)| k.chars().count()).max().unwrap_or(1);
     let max_desc = hints
-        .iter()
-        .map(|(_, d)| d.chars().count())
-        .max()
-        .unwrap_or(10);
+    .iter()
+    .map(|(_, d)| d.chars().count())
+    .max()
+    .unwrap_or(10);
     let w = ((max_key + max_desc + 6) as u16).max(20).min(area.width.saturating_sub(4));
     let h = (hints.len() as u16 + 2).min(area.height.saturating_sub(4));
 
@@ -638,26 +649,26 @@ fn draw_which_key(f: &mut Frame, app: &App, area: Rect, chord: char) {
 
     f.render_widget(Clear, popup);
     let block = Block::default()
-        .title(Span::styled(
-            format!(" {} ", key_label),
+    .title(Span::styled(
+        format!(" {} ", key_label),
             Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
-        ))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme::DIM))
-        .style(Style::default().bg(theme::BG));
+    ))
+    .borders(Borders::ALL)
+    .border_style(Style::default().fg(theme::DIM))
+    .style(Style::default().bg(theme::BG));
 
     let lines: Vec<Line> = hints
-        .into_iter()
-        .map(|(k, d)| {
-            Line::from(vec![
-                Span::styled(
-                    format!(" {:>width$} ", k, width = max_key),
+    .into_iter()
+    .map(|(k, d)| {
+        Line::from(vec![
+            Span::styled(
+                format!(" {:>width$} ", k, width = max_key),
                     Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(format!("  {}", d), Style::default().fg(theme::FG)),
-            ])
-        })
-        .collect();
+            ),
+            Span::styled(format!("  {}", d), Style::default().fg(theme::FG)),
+        ])
+    })
+    .collect();
     f.render_widget(Paragraph::new(lines).block(block), popup);
 }
 
@@ -670,13 +681,13 @@ fn draw_help(f: &mut Frame, _app: &App, area: Rect) {
     f.render_widget(Clear, popup);
 
     let block = Block::default()
-        .title(Span::styled(
-            " machina keybinds (? or Esc to close) ",
-            Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
-        ))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(theme::ACCENT))
-        .style(Style::default().bg(theme::BG));
+    .title(Span::styled(
+        " machina keybinds (? or Esc to close) ",
+                        Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD),
+    ))
+    .borders(Borders::ALL)
+    .border_style(Style::default().fg(theme::ACCENT))
+    .style(Style::default().bg(theme::BG));
 
     let style_key = Style::default().fg(theme::ACCENT).add_modifier(Modifier::BOLD);
     let style_dim = Style::default().fg(theme::DIM);
@@ -684,7 +695,7 @@ fn draw_help(f: &mut Frame, _app: &App, area: Rect) {
     let row = |k: &str, d: &str| {
         Line::from(vec![
             Span::styled(format!(" {:<14}", k), style_key),
-            Span::styled(d.to_string(), style_fg),
+                   Span::styled(d.to_string(), style_fg),
         ])
     };
     let sec = |s: &str| {

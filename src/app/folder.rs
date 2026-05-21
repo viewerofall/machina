@@ -10,6 +10,7 @@ pub struct FileEntry {
     pub is_dir: bool,
     pub size: u64,
     pub modified: String,
+    pub git: Option<crate::git::GitStatus>,
 }
 
 pub struct Folder {
@@ -39,6 +40,12 @@ impl Folder {
         Ok(folder)
     }
 
+    pub fn load_path(&mut self, path: &Path) -> Result<()> {
+        self.path = path.to_path_buf();
+        self.filter.clear();
+        self.load()
+    }
+
     pub fn load(&mut self) -> Result<()> {
         self.all_files.clear();
         self.cursor = 0;
@@ -46,32 +53,33 @@ impl Folder {
 
         if let Ok(entries) = std::fs::read_dir(&self.path) {
             let mut files: Vec<_> = entries
-                .filter_map(|e| {
-                    e.ok().and_then(|entry| {
-                        let path = entry.path();
-                        let name = path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("?")
-                            .to_string();
-                        let metadata = entry.metadata().ok()?;
-                        let modified = format_time(metadata.modified().ok()?);
+            .filter_map(|e| {
+                e.ok().and_then(|entry| {
+                    let path = entry.path();
+                    let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("?")
+                    .to_string();
+                    let metadata = entry.metadata().ok()?;
+                    let modified = format_time(metadata.modified().ok()?);
 
-                        Some(FileEntry {
-                            path,
-                            name,
-                            is_dir: metadata.is_dir(),
-                            size: metadata.len(),
-                            modified,
-                        })
+                    Some(FileEntry {
+                        path,
+                        name,
+                        is_dir: metadata.is_dir(),
+                         size: metadata.len(),
+                         modified,
+                         git: None, // Will be populated for dirs on demand
                     })
                 })
-                .collect();
+            })
+            .collect();
 
             files.sort_by(|a, b| match (a.is_dir, b.is_dir) {
                 (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                          (false, true) => std::cmp::Ordering::Greater,
+                          _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
             });
 
             self.all_files = files;
@@ -89,19 +97,19 @@ impl Folder {
         let filter = self.filter.to_lowercase();
 
         self.files = self
-            .all_files
-            .iter()
-            .filter(|f| {
-                if !show_hidden && f.name.starts_with('.') {
-                    return false;
-                }
-                if !filter.is_empty() && !f.name.to_lowercase().contains(&filter) {
-                    return false;
-                }
-                true
-            })
-            .cloned()
-            .collect();
+        .all_files
+        .iter()
+        .filter(|f| {
+            if !show_hidden && f.name.starts_with('.') {
+                return false;
+            }
+            if !filter.is_empty() && !f.name.to_lowercase().contains(&filter) {
+                return false;
+            }
+            true
+        })
+        .cloned()
+        .collect();
 
         if self.cursor >= self.files.len() {
             self.cursor = self.files.len().saturating_sub(1);

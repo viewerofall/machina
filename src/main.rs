@@ -128,8 +128,8 @@ async fn main() -> Result<()> {
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
+             LeaveAlternateScreen,
+             DisableMouseCapture
     )?;
     terminal.show_cursor()?;
 
@@ -150,10 +150,10 @@ fn refresh_watcher(w: &mut Option<FsWatcher>, app: &App) {
 
 fn is_image_path(path: &std::path::Path) -> bool {
     path.extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase())
-        .map(|e| matches!(e.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp"))
-        .unwrap_or(false)
+    .and_then(|e| e.to_str())
+    .map(|e| e.to_lowercase())
+    .map(|e| matches!(e.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp"))
+    .unwrap_or(false)
 }
 
 type Term = Terminal<CrosstermBackend<io::Stdout>>;
@@ -262,6 +262,7 @@ fn handle_input(app: &mut App, key: KeyEvent) -> Result<bool> {
         KeyCode::End => app.input.move_end(),
         KeyCode::Char(c) => {
             app.input.insert(c);
+            // Only update filter during active search
             if app.input.action == InputAction::Search {
                 let buf = app.input.buffer.clone();
                 app.current_mut().set_filter(buf);
@@ -279,10 +280,10 @@ fn commit_input(app: &mut App, action: InputAction, value: String) -> Result<()>
                 return Ok(());
             }
             let old = app
-                .current()
-                .hovered()
-                .map(|f| f.name.clone())
-                .unwrap_or_default();
+            .current()
+            .hovered()
+            .map(|f| f.name.clone())
+            .unwrap_or_default();
             match app.current_mut().rename_selected(&value) {
                 Ok(()) => app.message(format!("renamed: {} → {}", old, value)),
                 Err(e) => app.message(format!("rename failed: {}", e)),
@@ -327,9 +328,9 @@ fn commit_input(app: &mut App, action: InputAction, value: String) -> Result<()>
             let size = archive::estimate_size(&targets);
             let msg = format!(
                 "Archive {} item(s) ({}) → {}? (y/N)",
-                targets.len(),
-                preview::format_size(size),
-                name
+                              targets.len(),
+                              preview::format_size(size),
+                              name
             );
             app.confirm = Some(crate::app::Confirm {
                 kind: crate::app::ConfirmKind::Archive { name, cwd },
@@ -368,6 +369,37 @@ fn commit_input(app: &mut App, action: InputAction, value: String) -> Result<()>
                 // Note: needs &mut Term; handled in caller. Skip here.
                 app.message(format!("running: {}", expanded));
                 app.pending_fg_shell = Some(expanded_cmd);
+            }
+        }
+        InputAction::Teleport => {
+            let path_str = value.trim();
+            if path_str.is_empty() {
+                app.message("teleport cancelled".to_string());
+                return Ok(());
+            }
+            let expanded = if path_str.starts_with('~') {
+                if let Ok(home) = std::env::var("HOME") {
+                    path_str.replacen("~", &home, 1)
+                } else {
+                    path_str.to_string()
+                }
+            } else {
+                path_str.to_string()
+            };
+            let path = std::path::PathBuf::from(&expanded);
+            if !path.exists() {
+                app.message(format!(
+                    "os error: no file or directory found (os error 2)"
+                ));
+                return Ok(());
+            }
+            if !path.is_dir() {
+                app.message(format!("os error: not a directory (os error 20)"));
+                return Ok(());
+            }
+            match app.current_mut().load_path(&path) {
+                Ok(()) => app.message(format!("teleported to: {}", path.display())),
+                Err(e) => app.message(format!("teleport failed: {}", e)),
             }
         }
     }
@@ -518,29 +550,35 @@ fn handle_normal(app: &mut App, key: KeyEvent, term: &mut Term) -> Result<bool> 
             if let Some(entry) = app.current().hovered() {
                 let name = entry.name.clone();
                 app.input
-                    .open_before_ext(InputAction::Rename, "rename: ".into(), name);
+                .open_before_ext(InputAction::Rename, "rename: ".into(), name);
             }
         }
 
         // Create
-        (KeyCode::Char('a'), _) => {
+        (KeyCode::Char('a'), mods) if mods.is_empty() => {
             app.input.open(
                 InputAction::Create,
                 "new (f=name / d=name): ".into(),
-                String::new(),
+                           String::new(),
             );
         }
 
         // Search
         (KeyCode::Char('/'), _) => {
             app.input
-                .open(InputAction::Search, "search: ".into(), String::new());
+            .open(InputAction::Search, "search: ".into(), String::new());
         }
 
         // f<char> jump
         (KeyCode::Char('f'), _) => {
             app.input
-                .open(InputAction::JumpToChar, "jump to: ".into(), String::new());
+            .open(InputAction::JumpToChar, "jump to: ".into(), String::new());
+        }
+
+        // Teleport (goto path)
+        (KeyCode::Char('T'), _) => {
+            app.input
+            .open(InputAction::Teleport, "teleport: ".into(), String::new());
         }
 
         // Archive (compress to .tar.gz)
@@ -559,7 +597,7 @@ fn handle_normal(app: &mut App, key: KeyEvent, term: &mut Term) -> Result<bool> 
             app.input.open(
                 InputAction::Shell,
                 "$ (use $f $@ $d ; trailing & = bg): ".into(),
-                String::new(),
+                           String::new(),
             );
         }
 
@@ -713,9 +751,9 @@ fn handle_visual(app: &mut App, key: KeyEvent, _term: &mut Term) -> Result<bool>
             if let Some((start, end)) = app.keybind.get_visual_range() {
                 let end = end.min(app.current().files.len().saturating_sub(1));
                 let paths: Vec<_> = app.current().files[start..=end]
-                    .iter()
-                    .map(|f| f.path.clone())
-                    .collect();
+                .iter()
+                .map(|f| f.path.clone())
+                .collect();
                 for p in paths {
                     app.selected.insert(p);
                 }
@@ -728,9 +766,9 @@ fn handle_visual(app: &mut App, key: KeyEvent, _term: &mut Term) -> Result<bool>
             if let Some((start, end)) = app.keybind.get_visual_range() {
                 let end = end.min(app.current().files.len().saturating_sub(1));
                 let paths: Vec<_> = app.current().files[start..=end]
-                    .iter()
-                    .map(|f| f.path.clone())
-                    .collect();
+                .iter()
+                .map(|f| f.path.clone())
+                .collect();
                 let n = paths.len();
                 app.file_op = Some(app::FileOp {
                     mode: OpMode::Copy,
@@ -744,9 +782,9 @@ fn handle_visual(app: &mut App, key: KeyEvent, _term: &mut Term) -> Result<bool>
             if let Some((start, end)) = app.keybind.get_visual_range() {
                 let end = end.min(app.current().files.len().saturating_sub(1));
                 let paths: Vec<_> = app.current().files[start..=end]
-                    .iter()
-                    .map(|f| f.path.clone())
-                    .collect();
+                .iter()
+                .map(|f| f.path.clone())
+                .collect();
                 let n = paths.len();
                 app.file_op = Some(app::FileOp {
                     mode: OpMode::Cut,
@@ -763,9 +801,9 @@ fn handle_visual(app: &mut App, key: KeyEvent, _term: &mut Term) -> Result<bool>
                     .iter()
                     .map(|f| f.path.clone())
                     .collect::<Vec<_>>()
-                {
-                    app.selected.insert(p);
-                }
+                    {
+                        app.selected.insert(p);
+                    }
             }
             app.keybind.exit_visual();
             ops::trash_targets(app)?;
@@ -777,9 +815,9 @@ fn handle_visual(app: &mut App, key: KeyEvent, _term: &mut Term) -> Result<bool>
                     .iter()
                     .map(|f| f.path.clone())
                     .collect::<Vec<_>>()
-                {
-                    app.selected.insert(p);
-                }
+                    {
+                        app.selected.insert(p);
+                    }
             }
             app.keybind.exit_visual();
             ops::delete_targets_permanent(app)?;
@@ -796,14 +834,14 @@ fn open_hovered(app: &mut App, term: &mut Term) -> Result<()> {
     };
     let path = entry.path.clone();
     let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(str::to_lowercase);
+    .extension()
+    .and_then(|e| e.to_str())
+    .map(str::to_lowercase);
 
     let cmd = ext
-        .as_deref()
-        .and_then(|e| app.config.openers.get(e).cloned())
-        .unwrap_or_else(|| "xdg-open".to_string());
+    .as_deref()
+    .and_then(|e| app.config.openers.get(e).cloned())
+    .unwrap_or_else(|| "xdg-open".to_string());
 
     if opener::is_terminal_app(&cmd) {
         suspend_and_run(term, || opener::open_with(&cmd, &path))?;
@@ -819,18 +857,18 @@ fn open_hovered(app: &mut App, term: &mut Term) -> Result<()> {
 
 fn short_cmd(cmd: &str) -> String {
     std::path::Path::new(cmd)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| cmd.to_string())
+    .file_name()
+    .and_then(|n| n.to_str())
+    .map(|s| s.to_string())
+    .unwrap_or_else(|| cmd.to_string())
 }
 
 fn suspend_and_run<F: FnOnce() -> Result<()>>(term: &mut Term, f: F) -> Result<()> {
     disable_raw_mode()?;
     execute!(
         term.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
+             LeaveAlternateScreen,
+             DisableMouseCapture
     )?;
     let result = f();
     enable_raw_mode()?;

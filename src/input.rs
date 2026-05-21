@@ -6,6 +6,7 @@ pub enum InputAction {
     JumpToChar,  // one-char jump (vim 'f')
     Archive,     // create .tar.gz
     Shell,       // run shell command ($f, $@, $d, trailing & = bg)
+    Teleport,    // cd to path
 }
 
 pub struct Input {
@@ -70,10 +71,10 @@ impl Input {
         self.cursor -= 1;
         let byte_pos = self.byte_pos();
         let end = self.buffer[byte_pos..]
-            .char_indices()
-            .nth(1)
-            .map(|(i, _)| byte_pos + i)
-            .unwrap_or(self.buffer.len());
+        .char_indices()
+        .nth(1)
+        .map(|(i, _)| byte_pos + i)
+        .unwrap_or(self.buffer.len());
         self.buffer.replace_range(byte_pos..end, "");
     }
 
@@ -83,10 +84,10 @@ impl Input {
             return;
         }
         let end = self.buffer[byte_pos..]
-            .char_indices()
-            .nth(1)
-            .map(|(i, _)| byte_pos + i)
-            .unwrap_or(self.buffer.len());
+        .char_indices()
+        .nth(1)
+        .map(|(i, _)| byte_pos + i)
+        .unwrap_or(self.buffer.len());
         self.buffer.replace_range(byte_pos..end, "");
     }
 
@@ -113,10 +114,10 @@ impl Input {
 
     fn byte_pos(&self) -> usize {
         self.buffer
-            .char_indices()
-            .nth(self.cursor)
-            .map(|(i, _)| i)
-            .unwrap_or(self.buffer.len())
+        .char_indices()
+        .nth(self.cursor)
+        .map(|(i, _)| i)
+        .unwrap_or(self.buffer.len())
     }
 }
 
