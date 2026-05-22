@@ -13,6 +13,12 @@ A fast, keyboard-first file manager inspired by **yazi** and **ranger**.
 
 ## Usage
 
+### Install
+```bash
+curl -fsSL https://raw.githubusercontent.com/viewerofall/machina/refs/heads/main/install.sh | bash
+```
+Installs everything in one line from github release. Verifies checksums so you dont get a funky one aswell.
+
 ```bash
 cargo build --release
 ./target/release/machina         # Start in current directory
