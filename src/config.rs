@@ -42,6 +42,8 @@ struct RawGeneral {
 }
 
 fn default_icons() -> String {
+    // "image" mode requires kitty 1.24+. Older versions don't support
+    // Unicode placeholder graphics. Default to nerd for compatibility.
     "nerd".to_string()
 }
 
@@ -248,8 +250,9 @@ show_hidden = false
 confirm_delete = true
 editor = "nvim"
 respect_gitignore = true     # treat .gitignore matches as hidden (toggle with `.`)
-# Icon mode: "nerd" (Nerd-Font glyph), "image" (kitty graphics PNGs),
+# Icon mode: "nerd" (Nerd-Font glyph), "image" (kitty 1.24+ graphics),
 #           "ascii" (plain text marker), "off" (no icon column).
+# Note: "image" requires kitty v1.24+. Falls back to "nerd" on older kitty.
 icons = "nerd"
 
 # Theme — hex colors. All optional; omitted keys fall back to OneShot defaults.

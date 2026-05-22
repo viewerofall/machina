@@ -141,7 +141,7 @@ parallel folder-size caching, trash browser, bulk rename via $EDITOR.
 
 ### Icons (4 modes via `icons = "..."` in config)
 - [x] `"nerd"` — Nerd-Font PUA glyphs (default; requires Nerd-Font kitty config)
-- [x] `"image"` — kitty graphics protocol PNG sprites (Python-generated, baked in)
+- [x] `"image"` — kitty graphics protocol PNG sprites (U+10EEEE placeholders, not widely supported)
 - [x] `"ascii"` — plain text marker (`>` dirs, `@` symlinks)
 - [x] `"off"` — no icon column at all
 - [x] Per-extension icons: Rust, C, Python, JS, TS, Go, Zig, Lua…
@@ -149,8 +149,8 @@ parallel folder-size caching, trash browser, bulk rename via $EDITOR.
 - [x] Special filenames: Cargo.toml, package.json, README, LICENSE, Makefile, Dockerfile, .gitignore, .env
 - [x] Symlink arrow ()
 - [x] Categories: archives, images, audio, video, fonts, docs, executables
-- [x] Sprite generator: `tools/gen_icons.py` (PIL) → `assets/icons/*.png` (56 sprites)
-- [x] Image mode falls back to `"nerd"` when not running in kitty
+- [x] Sprite generator: `tools/gen_icons.py` (PIL) → `assets/icons/*.png` (56 sprites, baked in)
+- [x] Image mode auto-degrades to `"nerd"` when not in kitty or kitty < 1.24
 
 ### Mouse breadcrumbs
 - [x] Click any segment of the path in header → jump to that path
