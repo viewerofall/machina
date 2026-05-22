@@ -1,0 +1,91 @@
+# machina config — generated from your yazi setup
+# ~/.config/machina/config.toml
+
+[general]
+show_hidden     = true
+confirm_delete  = true
+editor          = "/home/abyss/.local/bin/lvim"# from your yazi opener
+icons = "nerd"
+# Goto bookmarks — matches your yazi keymap `g <key>`
+[bookmarks]
+h = "~"
+d = "~/Downloads"
+D = "~/Documents"
+c = "~/.config"
+r = "/"
+
+# Project shortcuts (yours from CLAUDE.md)
+w = "~/woven"
+v = "~/veil"
+m = "~/machina"
+y = "~/yourmom"
+o = "~/overview"
+
+# Extension -> command (mirrors yazi.toml [open] rules)
+[openers]
+# Text / code -> LunarVim (yazi edit rule)
+rs    = "/home/abyss/.local/bin/lvim"
+lua   = "/home/abyss/.local/bin/lvim"
+md    = "/home/abyss/.local/bin/lvim"
+toml  = "/home/abyss/.local/bin/lvim"
+py    = "/home/abyss/.local/bin/lvim"
+sh    = "/home/abyss/.local/bin/lvim"
+c     = "/home/abyss/.local/bin/lvim"
+h     = "/home/abyss/.local/bin/lvim"
+zig   = "/home/abyss/.local/bin/lvim"
+go    = "/home/abyss/.local/bin/lvim"
+js    = "/home/abyss/.local/bin/lvim"
+ts    = "/home/abyss/.local/bin/lvim"
+tsx   = "/home/abyss/.local/bin/lvim"
+jsx   = "/home/abyss/.local/bin/lvim"
+json  = "/home/abyss/.local/bin/lvim"
+yaml  = "/home/abyss/.local/bin/lvim"
+yml   = "/home/abyss/.local/bin/lvim"
+txt   = "/home/abyss/.local/bin/lvim"
+conf  = "/home/abyss/.local/bin/lvim"
+ini   = "/home/abyss/.local/bin/lvim"
+log   = "/home/abyss/.local/bin/lvim"
+xml   = "/home/abyss/.local/bin/lvim"
+html  = "/home/abyss/.local/bin/lvim"
+css   = "/home/abyss/.local/bin/lvim"
+
+# Images -> xdg-open (yazi rule)
+png   = "xdg-open"
+jpg   = "xdg-open"
+jpeg  = "xdg-open"
+gif   = "xdg-open"
+webp  = "xdg-open"
+svg   = "xdg-open"
+bmp   = "xdg-open"
+ico   = "xdg-open"
+
+# Video / audio -> mpv (yazi play rule)
+mp4   = "mpv"
+mkv   = "mpv"
+webm  = "mpv"
+avi   = "mpv"
+mov   = "mpv"
+flv   = "mpv"
+mp3   = "mpv"
+flac  = "mpv"
+wav   = "mpv"
+ogg   = "mpv"
+opus  = "mpv"
+m4a   = "mpv"
+
+# Docs -> xdg-open (yazi rule)
+pdf   = "xdg-open"
+
+# Deep Dark theme — matching your DankMaterialShell voltage flavor
+[theme]
+bg              = "#070b14"
+fg              = "#e6edf7"
+accent          = "#8800ff"
+dim             = "#1a1a2e"
+visual_bg       = "#2a1f3d"
+dir_fg          = "#8800ff"
+file_fg         = "#e6edf7"
+error_fg        = "#ff4e66"
+warn_fg         = "#ff9f43"
+git_ignored_fg  = "#3a3a52"
+symlink_fg      = "#bb88ff"
