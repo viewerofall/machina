@@ -53,6 +53,9 @@ pub fn draw(f: &mut Frame, app: &App) -> Option<Rect> {
     if app.paste_dialog.is_some() {
         draw_paste_dialog(f, app, area);
     }
+    if app.extract_menu.is_some() {
+        draw_extract_menu(f, app, area);
+    }
     if let Some(c) = app.keybind.get_pending() {
         draw_which_key(f, app, area, c);
     }
@@ -816,6 +819,55 @@ fn draw_paste_dialog(f: &mut Frame, app: &App, area: Rect) {
     let body = vec![
         Line::from(""),
         Line::from(Span::styled(info, Style::default().fg(theme::dim()))),
+        Line::from(""),
+        Line::from(row),
+        Line::from(""),
+    ];
+    f.render_widget(Paragraph::new(body).block(block), popup);
+}
+
+fn draw_extract_menu(f: &mut Frame, app: &App, area: Rect) {
+    let Some(m) = &app.extract_menu else { return };
+
+    let w = 50u16.min(area.width.saturating_sub(4));
+    let h = 7u16;
+    let x = area.x + (area.width - w) / 2;
+    let y = area.y + (area.height - h) / 2;
+    let popup = Rect { x, y, width: w, height: h };
+    f.render_widget(Clear, popup);
+
+    let block = Block::default()
+    .title(Span::styled(
+        " extract ",
+        Style::default().fg(theme::accent()).add_modifier(Modifier::BOLD),
+    ))
+    .borders(Borders::ALL)
+    .border_style(Style::default().fg(theme::accent()))
+    .style(Style::default().bg(theme::bg()));
+
+    let opts = ["Here", "To...", "And Delete"];
+    let mut row: Vec<Span> = Vec::new();
+    for (i, name) in opts.iter().enumerate() {
+        let style = if i == m.selected {
+            Style::default()
+            .bg(theme::accent())
+            .fg(theme::bg())
+            .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme::fg())
+        };
+        row.push(Span::styled(format!("  {}  ", name), style));
+        row.push(Span::raw("   "));
+    }
+
+    let filename = m.archive
+    .file_name()
+    .and_then(|n| n.to_str())
+    .unwrap_or("?");
+
+    let body = vec![
+        Line::from(""),
+        Line::from(Span::styled(filename, Style::default().fg(theme::dim()))),
         Line::from(""),
         Line::from(row),
         Line::from(""),

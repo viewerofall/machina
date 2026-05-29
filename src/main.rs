@@ -223,6 +223,9 @@ fn handle_key(app: &mut App, key: KeyEvent, term: &mut Term) -> Result<bool> {
     if app.paste_dialog.is_some() {
         return handle_paste_dialog(app, key);
     }
+    if app.extract_menu.is_some() {
+        return handle_extract_menu(app, key);
+    }
     if app.confirm.is_some() {
         return handle_confirm(app, key);
     }
@@ -333,6 +336,56 @@ fn handle_paste_dialog(app: &mut App, key: KeyEvent) -> Result<bool> {
             let dest = d.dest_override.clone();
             app.paste_dialog = None;
             ops::commit_paste(app, mode, dest)?;
+        }
+        _ => {}
+    }
+    Ok(true)
+}
+
+fn handle_extract_menu(app: &mut App, key: KeyEvent) -> Result<bool> {
+    let Some(m) = app.extract_menu.as_mut() else {
+        return Ok(true);
+    };
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') => {
+            app.extract_menu = None;
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            m.selected = m.selected.saturating_sub(1);
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            m.selected = (m.selected + 1).min(2);
+        }
+        KeyCode::Char('h') => m.selected = 0,
+        KeyCode::Char('t') => m.selected = 1,
+        KeyCode::Char('d') => m.selected = 2,
+        KeyCode::Enter => {
+            let archive = m.archive.clone();
+            let selected = m.selected;
+            app.extract_menu = None;
+
+            match selected {
+                0 => {
+                    // Extract here
+                    let dest = app.current().path.clone();
+                    ops::extract_archive(app, &archive, &dest, false)?;
+                }
+                1 => {
+                    // Extract to
+                    app.input.open(InputAction::ExtractTo, "extract to: ".into(), String::new());
+                    // Store archive path for later use
+                    app.file_op = Some(crate::app::FileOp {
+                        mode: crate::app::OpMode::Copy,
+                        files: vec![archive],
+                    });
+                }
+                2 => {
+                    // Extract and delete
+                    let dest = app.current().path.clone();
+                    ops::extract_archive(app, &archive, &dest, true)?;
+                }
+                _ => {}
+            }
         }
         _ => {}
     }
@@ -550,6 +603,37 @@ fn commit_input(app: &mut App, action: InputAction, value: String) -> Result<()>
                 Err(e) => app.message(format!("teleport failed: {}", e)),
             }
         }
+        InputAction::ExtractTo => {
+            let dest_str = value.trim().to_string();
+            if dest_str.is_empty() {
+                app.message("extract cancelled".to_string());
+                return Ok(());
+            }
+            if let Some(file_op) = app.file_op.take() {
+                if let Some(archive) = file_op.files.first() {
+                    let expanded = if dest_str.starts_with('~') {
+                        if let Ok(home) = std::env::var("HOME") {
+                            dest_str.replacen("~", &home, 1)
+                        } else {
+                            dest_str.to_string()
+                        }
+                    } else {
+                        dest_str.clone()
+                    };
+                    let dest = std::path::PathBuf::from(&expanded);
+                    ops::extract_archive(app, archive, &dest, false)?;
+                }
+            }
+        }
+        InputAction::ExtractHere => {
+            let dest = app.current().path.clone();
+            if let Some(file_op) = app.file_op.take() {
+                if let Some(archive) = file_op.files.first() {
+                    ops::extract_archive(app, archive, &dest, false)?;
+                }
+            }
+        }
+        InputAction::Extract => {} // handled by menu
     }
     Ok(())
 }
@@ -910,6 +994,17 @@ fn handle_normal(app: &mut App, key: KeyEvent, term: &mut Term) -> Result<bool> 
 
         // Archive (compress to .tar.gz)
         (KeyCode::Char('z'), _) => {
+            // If hovering a single archive file, show extract menu
+            if let Some(entry) = app.current().hovered() {
+                if !entry.is_dir && crate::archive::is_archive(&entry.path) {
+                    app.extract_menu = Some(crate::app::ExtractMenu {
+                        selected: 0,
+                        archive: entry.path.clone(),
+                    });
+                    return Ok(true);
+                }
+            }
+            // Otherwise, archive creation
             let targets = app.targets();
             if targets.is_empty() {
                 app.message("nothing to archive".into());

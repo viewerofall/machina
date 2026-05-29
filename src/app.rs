@@ -44,6 +44,12 @@ pub struct PasteDialog {
     pub dest_override: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ExtractMenu {
+    pub selected: usize, // 0=here, 1=to, 2=and delete
+    pub archive: PathBuf,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HelpVisible {
     Hidden,
@@ -62,6 +68,7 @@ pub struct App {
     pub input: Input,
     pub confirm: Option<Confirm>,
     pub paste_dialog: Option<PasteDialog>,
+    pub extract_menu: Option<ExtractMenu>,
     pub help: HelpVisible,
     pub config: Config,
     pub pending_fg_shell: Option<crate::shell::ShellCmd>,
@@ -94,6 +101,7 @@ impl App {
             input: Input::default(),
             confirm: None,
             paste_dialog: None,
+            extract_menu: None,
             help: HelpVisible::Hidden,
             config,
             pending_fg_shell: None,

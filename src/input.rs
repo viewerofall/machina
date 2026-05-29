@@ -8,6 +8,9 @@ pub enum InputAction {
     Shell,       // run shell command ($f, $@, $d, trailing & = bg)
     Teleport,    // cd to path
     Chmod,       // chmod hovered/selected (octal or symbolic)
+    ExtractHere, // extract archive to current directory
+    ExtractTo,   // extract archive to specified path
+    Extract,     // menu for extract options
 }
 
 pub struct Input {

@@ -305,3 +305,18 @@ fn plural(n: usize) -> &'static str {
         "s"
     }
 }
+
+pub fn extract_archive(app: &mut App, archive: &Path, dest: &Path, delete_after: bool) -> Result<()> {
+    crate::archive::extract(archive, dest)?;
+    if delete_after {
+        fs::remove_file(archive)?;
+        app.message(format!("extracted & deleted: {}", archive.display()));
+    } else {
+        app.message(format!("extracted to: {}", dest.display()));
+    }
+    app.clear_selected();
+    for t in app.tabs.iter_mut() {
+        let _ = t.load();
+    }
+    Ok(())
+}
